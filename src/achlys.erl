@@ -64,39 +64,9 @@
 -export([bite/1]).
 -export([declare/4]).
 
-%%====================================================================
-%% Sample Task Model Functions
-%% for testing and demonstration purposes.
-%%====================================================================
--export([rainbow/0]).
--export([light/0]).
--export([mintemp/0]).
-%%====================================================================
-
-%% API
--export([clusterize/0]).
--export([contagion/0]).
--export([pandemia/0]).
--export([get_preys/0]).
-% -export([get_bounded_preys/0]).
--export([bidirectional_join/1]).
-
-%% PMOD-related functions API
--export([bane/1]).
--export([bane_all_preys/1]).
--export([venom/0]).
--export([venom/1]).
-
 %% Shortcuts
 -export([members/0]).
 -export([gc/0]).
--export([flush/1]).
--export([join_host/1]).
--export([join/1]).
-
--export([bench/0]).
--export([get_bench/0]).
-
 
 %%====================================================================
 %% TODO: Binary encoding of values propagated through CRDTs instead
@@ -123,17 +93,6 @@
 %% [_][_] [_][_]  [_][_] [_][_]  [_][_] [_][_]  [_][_]
 %% |-------------> 14 bits for aggregation value : 0 to 262 143
 %%====================================================================
-
-%%====================================================================
-%% Type definitions
-%%====================================================================
-
-%%====================================================================
-%% Macros
-%%====================================================================
-
--define(MANAGER,    partisan_hyparview_peer_service_manager).
--define(LPS,    lasp_peer_service).
 
 %% ===================================================================
 %% Entry point functions
@@ -185,54 +144,15 @@ get_all_tasks() ->
 declare(Name, Targets, ExecType, Func) ->
     achlys_util:declare(Name, Targets, ExecType, Func).
 
--spec rainbow() -> erlang:function().
-rainbow() ->
-% achlys:bite(achlys:declare(t,all,permanent,fun() -> [grisp_led:color(X,off)|| X <- [1,2]] end)).
-% achlys:bite(achlys:declare(t,all,permanent,fun() -> achlys:rainbow() end)).
-    achlys_util:rainbow().
-
--spec light() -> erlang:function().
-light() ->
-    F = fun() ->
-            AmbLight = pmod_als:percentage(),
-            logger:log(notice , "AL Level : ~p % ~n", [AmbLight]),
-            AmbLight
-    end.
-
--spec mintemp() -> erlang:function().
-mintemp() ->
-    F = fun() ->
-        Id = {<<"temp">>, state_gset},
-        {ok, {_, _, _, _}} = lasp:declare(Id, state_gset),
-        L = lists:foldl(fun
-            (Elem, AccIn) -> timer:sleep(5000),
-                Temp = pmod_nav:read(acc, [out_temp]),
-                Temp ++ AccIn
-        end, [], lists:seq(1,5)),
-        SList = lists:usort(L),
-        Min = hd(SList),
-        Name = node(),
-        lasp:update(Id, {add, {Min, Name}}, self()),
-        spawn(fun() ->
-                lasp:read(Id, {cardinality, 5}),
-                {ok, S} = lasp:query(Id),
-                Fetched = sets:to_list(S),
-                {Minimum, Node} = hd(lists:usort(Fetched)),
-                Self = node(),
-                case Node =:= Self of
-                    true ->
-                        [ grisp_led:color(X, blue) || X <- [1,2] ];
-                    _ ->
-                        [ grisp_led:color(X, red) || X <- [1,2] ]
-                end
-        end)
-    end.
-
 %% @doc Adds the given task in the replicated task set.
 %% @see achlys_task_server:add_task/1.
 -spec bite(Task :: achlys:task()) -> ok.
 bite(Task) ->
     achlys_task_server:add_task(Task).
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
 
 %% @doc Attempts to discover and join other neighboring nodes.
 -spec clusterize() -> [atom()].
@@ -245,82 +165,11 @@ clusterize() ->
         ,        net_adm:ping(R) =:= pong] ,
     clusterize(Reachable).
 
-%% @doc Form Lasp cluster without attempting to ping neighbors beforehand.
--spec contagion() -> [{ error , atom() } | { ok , atom() } ].
-contagion() ->
-    logger:log(notice , "Pure Lasp Cluster formation attempt ~n") ,
-    % L = get_preys(),
-    % Self = ?MANAGER:myself(),
-    N = seek_neighbors() ,
-    Remotes = binary_remotes_to_atoms(N) ,
-    [ bidirectional_join(R) || R <- Remotes
-        ,        R =/= node()].
-
-%% @doc Close disterl TCP connections with neighboring nodes.
--spec pandemia() -> ok.
-pandemia() ->
-    logger:log(notice , "Closing native Erlang connections ~n") ,
-    _ = [ net_kernel:disconnect(X) || X <- get_preys() ],
-    ok.
-
-%% @doc Returns the aggregates for the given variable
-%% as seen by the current node.
--spec bane(atom()) -> list().
-% bane(Data) when is_atom(Data) ->
-bane(Data) ->
-    logger:log(notice , "Reading ~p CRDT ~n", [Data]) ,
-    % Id = {atom_to_binary(Data, utf8), state_awset_ps},
-    % Id = {atom_to_binary(Data, utf8), state_awset},
-    Id = {atom_to_binary(Data, utf8), state_gset},
-    % L = [ unicode:characters_to_binary([X
-    %     , "_"
-    %     , erlang:atom_to_binary(Data,utf8)] , utf8)
-    %     || X <- seek_neighbors() ],
-    {ok, S} = lasp:query(Id),
-    sets:to_list(S).
-
-%% @doc Returns the aggregates for the given variable
-%% as seen by the current node for all nodes.
--spec bane_all_preys(atom()) -> list().
-bane_all_preys(temperature) ->
-    logger:log(notice , "Reading temperature CRDT ~n", []) ,
-    lists:flatten([ achlys_util:query(Id) || Id <- ?TEMP_LIST ]);
-bane_all_preys(pressure) ->
-    logger:log(notice , "Reading pressure CRDT ~n", []) ,
-    lists:flatten([ achlys_util:query(Id) || Id <- ?PRESS_LIST ]);
-bane_all_preys(Data) ->
-    logger:log(error , "Unknown value ~p ~n", [Data]) ,
-    [undefined].
-    % bane(L).
-% bane([H|T]) ->
-%     {ok, S} = lasp:query({H, state_awset}),
-%     L = sets:to_list(S),
-%     [ L | bane(T) ];
-% bane([]) ->
-%     [].
-
-bench() ->
-    achlys_pmod_nav_worker:bench_awset().
-
-get_bench() ->
-    {ok, S} = lasp:query({<<"bench">>,state_awset}),
-    sets:to_list(S).
-%% @doc Collect data based on sensors available on Pmod modules and store
-%% aggregated values in corresponding Lasp variable.
--spec venom() -> ok.
-venom() ->
-    achlys_pmod_nav_worker:run().
-
 %% @doc Collect data based on sensors available on Pmod modules and store
 %% aggregated values in corresponding Lasp variable.
 -spec venom(atom()) -> ok.
 venom(Worker) ->
     Worker:run().
-    % achlys_pmod_nav_worker:run().
-
-%%====================================================================
-%% Clustering helper functions
-%%====================================================================
 
 %% @doc Returns a list of known remote hostnames
 %% that could be potential neighbors.
@@ -346,53 +195,8 @@ seek_neighbors([]) ->
 
 %% @private
 join(Host) ->
-    % try rpc:call(Host , partisan_hyparview_peer_service_manager , myself , []) of
-    %     #{channels := _Channels
-    %     , listen_addrs := _Addresses
-    %     , name := _Name
-    %     , parallelism := _Parallelism } = Node ->
-            ok = lasp_peer_service:join(Host),
-            {ok, Host}.
-    % catch
-    %     {badrpc, Reason} ->
-    %         logger:log(error , "Unable to RPC remote : ~p~n" , [Reason]) ,
-    %         {error , Reason};
-    %     {error, Reason} ->
-    %         logger:log(error , "Unable to retrieve remote : ~p~n" , [Reason]) ,
-    %         {error , Reason}
-    % end.
-
-%% @private
-bidirectional_join(Host) ->
-    Node = #{channels := _Channels
-    , listen_addrs := _Addresses
-    , name := _Name
-    , parallelism := _Parallelism } = try rpc:call(Host , partisan_hyparview_peer_service_manager , myself , [])
-    catch
-        error:{badrpc, nodedown} ->
-            logger:log(error , "Unable to RPC remote : Node down~n") ,
-            {error, nodedown};
-        error:{badrpc, Reason} ->
-            logger:log(error , "Unable to RPC remote : ~p~n" , [Reason]) ,
-            {error , Reason};
-        _:Reason ->
-            logger:log(error , "Unable to retrieve remote : ~p~n" , [Reason]) ,
-            {error , Reason}
-    end,
-    lasp_peer_service:join(Node) ,
-    ok = try rpc:call(Host,lasp_peer_service,join,[partisan_hyparview_peer_service_manager:myself()])
-    catch
-        error:{badrpc, nodedown} ->
-            logger:log(error , "Unable to RPC remote : Node down~n") ,
-            {error, nodedown};
-        error:{badrpc, RemoteReason} ->
-            logger:log(error , "Unable to RPC remote : ~p~n" , [RemoteReason]) ,
-            {error , RemoteReason};
-        _:RemoteReason ->
-            logger:log(error , "Unable to retrieve remote : ~p~n" , [RemoteReason]) ,
-            {error , RemoteReason}
-    end,
-    Node.
+ok = lasp_peer_service:join(Host),
+    {ok, Host}.
 
 %% @private
 clusterize([H | Remotes]) ->
@@ -409,18 +213,11 @@ clusterize([]) ->
 
 %% @private
 members() ->
-    ?LPS:members().
+    lasp_peer_service:members().
 
 %% @private
 gc() ->
     achlys_util:do_gc().
-
-%% @private
-flush(Name) ->
-    BS = atom_to_binary(Name , utf8),
-    lasp:update({BS,state_awset}
-        , {rmv_all, achlys_util:query({BS,state_awset})}
-        , self()).
 
 %% @private
 join_host(Host) ->
