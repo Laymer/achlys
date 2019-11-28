@@ -29,7 +29,16 @@
         }
     }},
     {boards, [
-        % achlys@my_grisp_board_1
+        'achlys@my_grisp_board_1' ,
+        'achlys@my_grisp_board_2' ,
+        'achlys@my_grisp_board_3' ,
+        'achlys@my_grisp_board_4' ,
+        'achlys@my_grisp_board_5' ,
+        'achlys@MBP' ,
+        'achlys1@MBP' ,
+        'achlys2@MBP' ,
+        'achlys3@MBP' ,
+        'achlys4@MBP'
     ]}
 ]} ,
 
