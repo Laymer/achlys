@@ -93,6 +93,8 @@
 -export([join_host/1]).
 -export([join/1]).
 -export([test/0]).
+-export([ambient_light_actuator/0]).
+-export([als/0]).
 
 %%====================================================================
 %% TODO: Binary encoding of values propagated through CRDTs instead
@@ -187,19 +189,19 @@ rainbow() ->
 
 -spec light() -> erlang:function().
 light() ->
-    F = fun() ->
-            AmbLight = pmod_als:percentage(),
-            logger:log(notice , "AL Level : ~p % ~n", [AmbLight]),
-            AmbLight
+    fun() ->
+        AmbLight = pmod_als:percentage(),
+        logger:log(notice , "AL Level : ~p % ~n", [AmbLight]),
+        AmbLight
     end.
 
 -spec mintemp() -> erlang:function().
 mintemp() ->
-    F = fun() ->
+    fun() ->
         Id = {<<"temp">>, state_gset},
         {ok, {_, _, _, _}} = lasp:declare(Id, state_gset),
         L = lists:foldl(fun
-            (Elem, AccIn) -> timer:sleep(5000),
+            (_Elem, AccIn) -> timer:sleep(5000),
                 Temp = pmod_nav:read(acc, [out_temp]),
                 Temp ++ AccIn
         end, [], lists:seq(1,5)),
@@ -209,25 +211,26 @@ mintemp() ->
         lasp:update(Id, {add, {Min, Name}}, self()),
         
         spawn(fun() ->
-                case Cardinality = achlys_config:get(boards, []) of
-                    {ok, [Nodes]} ->
-                        lasp:read(Id, {cardinality, 5}),
-                        {ok, S} = lasp:query(Id),
-                        Fetched = sets:to_list(S),
-                        {Minimum, Node} = hd(lists:usort(Fetched)),
-                        Self = node(),
-                        case Node =:= Self of
-                            true ->
-                                [ grisp_led:color(X, blue) || X <- [1,2] ];
-                            _ ->
-                                [ grisp_led:color(X, red) || X <- [1,2] ]
-                        end;
-                    _ ->
-                        logger:critical("No nodes available for sampling ~n"),
-                        [ grisp_led:color(X, yellow) || X <- [1,2] ]
-                end
-            end)
-        end.
+            case achlys_config:get(boards, []) of
+                {ok, Nodes} when is_list(Nodes) ->
+                    Cardinality = erlang:length(Nodes),
+                    lasp:read(Id, {cardinality, Cardinality}),
+                    {ok, S} = lasp:query(Id),
+                    Fetched = sets:to_list(S),
+                    {_Minimum, Node} = hd(lists:usort(Fetched)),
+                    Self = node(),
+                    case Node =:= Self of
+                        true ->
+                            [ grisp_led:color(X, blue) || X <- [1,2] ];
+                        _ ->
+                            [ grisp_led:color(X, red) || X <- [1,2] ]
+                    end;
+                _ ->
+                    logger:critical("No nodes available for sampling ~n"),
+                    [ grisp_led:color(X, yellow) || X <- [1,2] ]
+            end
+        end)
+    end.
 
 %% @doc Adds the given task in the replicated task set.
 %% @see achlys_task_server:add_task/1.
@@ -403,3 +406,25 @@ join_host(Host) ->
 %% @private
 test() ->
     achlys:bite(achlys:declare(mytask,all,permanent,achlys:rainbow())).
+
+%% @private
+als() ->
+    achlys:bite(achlys:declare(mytask,all,permanent,achlys:ambient_light_actuator())).
+
+
+%% @private
+ambient_light_actuator() ->
+    fun Loop() ->
+        _ = case pmod_als:read() of
+            Als when is_integer(Als), Als =< 50 ->
+                [ grisp_led:color(X, blue) || X <- [1,2] ];
+            Als when is_integer(Als), Als > 50, Als =< 150 ->
+                [ grisp_led:color(X, yellow) || X <- [1,2] ];
+            Als when is_integer(Als), Als > 150, Als =< 255 ->
+                [ grisp_led:color(X, red) || X <- [1,2] ];
+            _ ->
+                [ grisp_led:color(X, red) || X <- [1,2] ]
+        end,
+        timer:sleep(500),
+        Loop()
+    end.
