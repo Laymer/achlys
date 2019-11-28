@@ -92,6 +92,7 @@
 -export([flush/1]).
 -export([join_host/1]).
 -export([join/1]).
+-export([test/0]).
 
 %%====================================================================
 %% TODO: Binary encoding of values propagated through CRDTs instead
@@ -206,20 +207,27 @@ mintemp() ->
         Min = hd(SList),
         Name = node(),
         lasp:update(Id, {add, {Min, Name}}, self()),
+        
         spawn(fun() ->
-                lasp:read(Id, {cardinality, 5}),
-                {ok, S} = lasp:query(Id),
-                Fetched = sets:to_list(S),
-                {Minimum, Node} = hd(lists:usort(Fetched)),
-                Self = node(),
-                case Node =:= Self of
-                    true ->
-                        [ grisp_led:color(X, blue) || X <- [1,2] ];
+                case Cardinality = achlys_config:get(boards, []) of
+                    {ok, [Nodes]} ->
+                        lasp:read(Id, {cardinality, 5}),
+                        {ok, S} = lasp:query(Id),
+                        Fetched = sets:to_list(S),
+                        {Minimum, Node} = hd(lists:usort(Fetched)),
+                        Self = node(),
+                        case Node =:= Self of
+                            true ->
+                                [ grisp_led:color(X, blue) || X <- [1,2] ];
+                            _ ->
+                                [ grisp_led:color(X, red) || X <- [1,2] ]
+                        end;
                     _ ->
-                        [ grisp_led:color(X, red) || X <- [1,2] ]
+                        logger:critical("No nodes available for sampling ~n"),
+                        [ grisp_led:color(X, yellow) || X <- [1,2] ]
                 end
-        end)
-    end.
+            end)
+        end.
 
 %% @doc Adds the given task in the replicated task set.
 %% @see achlys_task_server:add_task/1.
@@ -391,3 +399,7 @@ flush(Name) ->
 %% @private
 join_host(Host) ->
     lasp_peer_service:join(Host).
+
+%% @private
+test() ->
+    achlys:bite(achlys:declare(mytask,all,permanent,achlys:rainbow())).
