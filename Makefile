@@ -44,7 +44,7 @@ ifndef ERL
 $(error Could not find Erlang/OTP ('erl' command) installed on this system.)
 endif
 
-.PHONY: all compile checkrebar3 shell erlshell docs test dialyzer cover release package tar clean relclean push upbar addemu deploy cacheclean build upgrade tree
+.PHONY: all compile checkrebar3 snameshell shell erlshell docs test dialyzer cover release package tar clean relclean push upbar addemu deploy cacheclean build upgrade tree
 
 
 
@@ -73,6 +73,10 @@ shell:
 	@ echo Launching shell
 	$(PRE) \
 	    NAME=$(NAME) PEER_IP=$(PEER_IP) IP=$(IP) $(REBAR) as test shell --name '$(GRISPAPP)$(n)@$(IP)' --setcookie $(COOKIE) --apps $(GRISPAPP) $(POST)
+snameshell:
+	@ echo Launching shell
+	$(PRE) \
+	    NAME=$(NAME) PEER_IP=$(PEER_IP) IP=$(IP) $(REBAR) as test shell --sname $(GRISPAPP)$(n) --setcookie $(COOKIE) --apps $(GRISPAPP) $(POST)
 
 deploy:
 	@ echo Deploying
